@@ -5,21 +5,164 @@ output:
     keep_md: true
 ---
 
+Setting options for the overall file
+```{r setoptions, echo=TRUE}
+library(knitr)
+opts_chunk$set(echo = TRUE, results = "asis")
+```
+## Loading the data
 
-## Loading and preprocessing the data
+Load the data from CSV to variable activity
+```{r loaddataset}
+activity = read.csv("activity.csv")
+str(activity)
+```
 
+##Preprocessing the Data
+
+```{r preprocess}
+library(lubridate)
+activity$date <- ymd(activity$date)
+str(activity)
+summary(activity)
+```
 
 
 ## What is mean total number of steps taken per day?
+```{r meansteps}
+library(dplyr)
+steptakenbyday <- activity %>% 
+                    na.omit() %>% 
+                         group_by(date) %>% 
+                              summarise(totalsteps = sum(steps)) 
 
+```
 
+Verifying filtered/aggregated data
+```{r}
+head(steptakenbyday, n=10)
+str(steptakenbyday)
+```
+
+## Make Historgram of total number of steps taken each day
+
+```{r}
+library(ggplot2)
+qplot(totalsteps, data=steptakenbyday, geom="histogram", main = "Total number of steps taken each day", xlab = "Total Number of steps", ylab="Frequency(Count of Days)", binwidth=2000)
+stepsByDayCentralMeasures <- steptakenbyday %>% 
+                    summarise(meanStepsByDay=as.numeric(mean(totalsteps)), 
+                         medianStepsByDay=as.numeric(median(totalsteps)))
+
+meanst <- mean(steptakenbyday$totalsteps)
+medianst <- median(steptakenbyday$totalsteps)
+```
+
+The mean of the total number of steps taken per day is `r meanst`  
+The median of the total number of steps taken per day is `r medianst`
 
 ## What is the average daily activity pattern?
+```{r meandailyactivity}
+avgdailyactivity <- activity %>% 
+                         na.omit() %>% 
+                              group_by(interval) %>% 
+                                   summarise(avgsteps = mean(steps))
 
+head(avgdailyactivity, 10)
+
+
+```
+
+Time Series Plot 
+
+```{r plot}
+qplot(x=interval, y=avgsteps, data=avgdailyactivity, geom="line", main = "Average number of steps taken each day by Interval", xlab = "Average Number of steps", ylab="Frequency(5 Minute Interval)")
+```
+
+
+```{r}
+which.max(avgdailyactivity$avgsteps)
+maxindex <- which.max(avgdailyactivity$avgsteps)
+intervalav <- avgdailyactivity[maxindex,1]
+avsteps <- avgdailyactivity[maxindex,2]
+
+```
+Max steps 5 minute interval is `r avsteps` for interval `r intervalav`
 
 
 ## Imputing missing values
 
+Identify missing values
+```{r}
+summiss<- sum(is.na(activity$steps))
+```
+Count of missing values in Dataset is `r summiss`
+
+Startegy for filling missing value in dataset
+```{r}
+nadataset <- activity[which(is.na(activity$steps)),]
+nadataset <- nadataset %>%
+               inner_join(avgdailyactivity, by="interval") %>%
+                    mutate(steps=avgsteps) %>%
+                         select(-avgsteps)
+head(nadataset)
+```
+
+Combined new dataset with default missing value
+```{r}
+combineddataset  <- activity
+
+combineddataset[which(is.na(combineddataset$steps)), 1] <- nadataset[ , 1]
+
+head(combineddataset)
+sum(!complete.cases(combineddataset))
+
+newStepsByDay <- combineddataset %>% 
+                     group_by(date) %>% 
+                         summarise(totalSteps=sum(steps))
+
+head(newStepsByDay)
+```
+histogram on new dataset
+```{r}
+qplot(totalSteps, data = newStepsByDay, geom = "histogram", main = "Total number of steps taken each day with default value for Steps = NA", xlab = "Total Number of steps", ylab="Frequency(Count of Days)", binwidth=2000)
+tapply(nadataset$steps, as.factor(nadataset$date), sum)
+
+newStepsByDayCentralMeasures <- newStepsByDay %>% 
+               summarise(meanStepsByDay=as.numeric(mean(totalSteps)), 
+               medianStepsByDay=as.numeric(median(totalSteps)))
+rbind(stepsByDayCentralMeasures, newStepsByDayCentralMeasures)
+
+
+```
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r}
+combineddataset <- combineddataset %>% 
+               mutate(weekdays=ifelse(weekdays(date) == "Saturday" | 
+                                      weekdays(date) == "Sunday", 
+                                      "weekend", 
+                                      "weekday"))
+combineddataset$weekdays <- as.factor(combineddataset$weekdays)
+str(combineddataset)
+
+revisedStepsByInterval <- combineddataset %>%
+                          group_by(interval, weekdays) %>%
+                              summarise(averageSteps=mean(steps))
+head(revisedStepsByInterval, n=10)
+
+qplot(x=interval,
+      y=averageSteps,
+      data=revisedStepsByInterval,
+      geom="line",
+      main="Average number of steps taken for each Interval, across all days\n",
+      xlab="\nInterval",
+      ylab="Number of Steps\n",
+      facets=weekdays ~ .)
+
+
+
+```
+
+Pattern does not differ much between weekday and weekend
